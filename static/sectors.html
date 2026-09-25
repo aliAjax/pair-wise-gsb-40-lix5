@@ -1,0 +1,376 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>搜救扇区编排台</title>
+<style>
+  :root{--ink:#0f2a43;--line:#c9d8e4;--bg:#f4f8fb;--card:#fff;--accent:#0b6ecb;--warn:#c2410c;--ok:#15803d}
+  *{box-sizing:border-box}
+  body{font:14px/1.55 system-ui,"PingFang SC","Microsoft YaHei",sans-serif;margin:0;background:var(--bg);color:var(--ink)}
+  header{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:10px 18px;background:#0b3a5e;color:#fff}
+  header h1{font-size:18px;margin:0 auto 0 0}
+  header input,header select{background:#0e4a77;border:1px solid #3b7197;color:#fff;border-radius:4px;padding:4px 8px}
+  header button{background:#0b6ecb;color:#fff;border:0;border-radius:4px;padding:5px 12px;cursor:pointer}
+  main{display:grid;grid-template-columns:300px 1fr 320px;gap:14px;padding:14px 18px;align-items:start}
+  @media(max-width:1100px){main{grid-template-columns:1fr}}
+  section{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px 14px;margin-bottom:14px}
+  h2{font-size:15px;margin:0 0 10px;padding-bottom:6px;border-bottom:2px solid var(--accent)}
+  h3{font-size:13px;margin:14px 0 6px;color:#456}
+  label{display:block;font-size:12px;color:#567;margin:6px 0 2px}
+  input,select{width:100%;padding:5px 7px;border:1px solid var(--line);border-radius:4px;font:inherit}
+  button{font:inherit;cursor:pointer;border:1px solid var(--accent);background:var(--accent);color:#fff;border-radius:4px;padding:5px 12px}
+  button.ghost{background:#fff;color:var(--accent)}
+  button.danger{background:#fff;color:var(--warn);border-color:var(--warn)}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  table{border-collapse:collapse;width:100%;font-size:13px}
+  th,td{border:1px solid var(--line);padding:4px 6px;text-align:left}
+  th{background:#eaf2f9}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .mission{padding:7px 9px;border:1px solid var(--line);border-radius:6px;margin-bottom:6px;cursor:pointer}
+  .mission.sel{border-color:var(--accent);background:#eaf4ff}
+  .mission .code{font-weight:600}
+  .tag{display:inline-block;padding:1px 7px;border-radius:10px;font-size:12px;background:#e2e8f0}
+  .tag.open{background:#fef3c7}.tag.covered{background:#dcfce7}.tag.closed{background:#e5e7eb}
+  .tag.assigned{background:#fee2e2}.tag.available{background:#dcfce7}
+  #toast{position:fixed;top:12px;left:50%;transform:translateX(-50%);padding:8px 18px;border-radius:6px;background:#0f2a43;color:#fff;opacity:0;transition:.3s;z-index:9;pointer-events:none}
+  #toast.show{opacity:.95}#toast.err{background:var(--warn)}
+  #map{width:100%;height:auto;border:1px solid var(--line);border-radius:8px;background:#0a2c46}
+  #countdown{font-variant-numeric:tabular-nums;font-weight:600;margin:6px 0}
+  #countdown.late{color:var(--warn)}
+  .notes{font-size:12px;color:#475;background:#f0f7ff;border-left:3px solid var(--accent);padding:6px 10px;margin:8px 0}
+  .warnline{color:var(--warn);font-size:12px}
+  #history{max-height:340px;overflow:auto;padding-left:20px;font-size:13px}
+  #history li{margin-bottom:6px}
+  #history .t{color:#789;font-size:12px;margin-right:6px}
+  .chg{background:#f1f5f9;border-radius:4px;padding:1px 6px}
+  .muted{color:#789;font-size:12px}
+</style>
+</head>
+<body>
+<header>
+  <h1>搜救扇区编排台</h1>
+  <span>协调员 <input id="user" style="width:110px" placeholder="姓名"></span>
+  <span id="sea">海况：—</span>
+  <button id="seaBtn" class="ghost" style="background:#0e4a77">更新海况</button>
+  <span id="ver" class="muted" style="color:#9fc3e0"></span>
+</header>
+<div id="toast"></div>
+<main>
+  <div>
+    <section>
+      <h2>① 登记事件</h2>
+      <form id="missionForm">
+        <div class="row2">
+          <div><label>事件编号</label><input name="code" required placeholder="SAR-2026-001"></div>
+          <div><label>名称</label><input name="name" required placeholder="船名/情况"></div>
+        </div>
+        <div class="row2">
+          <div><label>中心纬度</label><input name="center_lat" required type="number" step="any" placeholder="31.30"></div>
+          <div><label>中心经度</label><input name="center_lon" required type="number" step="any" placeholder="122.30"></div>
+        </div>
+        <div class="row2">
+          <div><label>半径（公里）</label><input name="radius_km" required type="number" step="any" min="1" value="15"></div>
+          <div><label>优先级（1-5）</label><input name="priority" required type="number" min="1" max="5" value="3"></div>
+        </div>
+        <label>最晚完成时刻</label><input name="deadline" required type="datetime-local">
+        <div class="row2">
+          <div><label>需求能力</label><select name="required_capability"><option value="">不限</option><option>医疗</option><option>潜水</option><option>拖带</option><option>消防</option></select></div>
+          <div><label>备注</label><input name="note" placeholder="可选"></div>
+        </div>
+        <p><button type="submit">登记事件</button></p>
+      </form>
+      <h3>事件列表（点击选择）</h3>
+      <div id="missions" class="muted">暂无事件</div>
+    </section>
+  </div>
+  <div>
+    <section>
+      <h2>② 扇区编排 <span id="orchFor" class="muted"></span></h2>
+      <svg id="map" viewBox="0 0 500 500" role="img"></svg>
+      <div id="countdown"></div>
+      <p>
+        <button id="planBtn" class="ghost">预演编排</button>
+        <button id="publishBtn">发布编排</button>
+        <button id="cancelOrchBtn" class="danger">取消当前编排</button>
+      </p>
+      <div id="planOut"></div>
+      <h3>当前编排</h3>
+      <div id="orch" class="muted">未选择事件或暂无生效编排</div>
+    </section>
+  </div>
+  <div>
+    <section>
+      <h2>③ 待命船只</h2>
+      <div id="vessels" class="muted">暂无船只</div>
+      <h3>船位 / 剩余航程报告</h3>
+      <form id="reportForm">
+        <label>船只</label><select name="vessel_id"></select>
+        <div class="row2">
+          <div><label>纬度</label><input name="latitude" required type="number" step="any"></div>
+          <div><label>经度</label><input name="longitude" required type="number" step="any"></div>
+        </div>
+        <label>剩余航程（公里）</label><input name="endurance_km" required type="number" step="any" min="0">
+        <p><button type="submit" class="ghost">录入报告</button></p>
+      </form>
+      <h3>登记船只</h3>
+      <form id="vesselForm">
+        <label>船名</label><input name="name" required>
+        <label>能力（逗号分隔，如：医疗,潜水）</label><input name="capabilities" required placeholder="医疗,潜水">
+        <div class="row2">
+          <div><label>纬度</label><input name="latitude" required type="number" step="any"></div>
+          <div><label>经度</label><input name="longitude" required type="number" step="any"></div>
+        </div>
+        <div class="row2">
+          <div><label>航速（节）</label><input name="speed_kn" required type="number" step="any" min="1" value="18"></div>
+          <div><label>剩余航程（公里）</label><input name="endurance_km" required type="number" step="any" min="1" value="400"></div>
+        </div>
+        <label>适用海况上限（0-9）</label><input name="max_sea_state" required type="number" min="0" max="9" value="5">
+        <p><button type="submit" class="ghost">登记船只</button></p>
+      </form>
+    </section>
+  </div>
+</main>
+<div style="padding:0 18px 18px">
+  <section>
+    <h2>历史变更（前后指派）</h2>
+    <ol id="history"></ol>
+  </section>
+</div>
+<script>
+"use strict";
+const $=s=>document.querySelector(s);
+const S={state:null,missionId:null,plan:null};
+const PALETTE=["#4c9aff","#36b37e","#ffab00","#ff5630","#6554c0","#00b8d9","#ef5da8","#8ac926"];
+const ACT={publish:"发布编排",republish:"重新编排",reassign:"改派",cancel:"取消编排","sector.cancel":"取消扇区",
+  "vessel.report":"船位报告","vessel.register":"登记船只","sea_state.update":"海况更新",
+  "mission.create":"登记事件","mission.close":"关闭事件"};
+const STATUS={open:"待编排",covered:"已覆盖",closed:"已关闭",available:"待命",assigned:"已指派"};
+
+function toast(msg,isErr){const t=$("#toast");t.textContent=msg;t.className="show"+(isErr?" err":"");setTimeout(()=>t.className="",4200)}
+function user(){return $("#user").value.trim()}
+async function api(path,opts={}){
+  opts.headers=Object.assign({"Content-Type":"application/json"},opts.headers);
+  const r=await fetch(path,opts);const d=await r.json().catch(()=>({}));
+  if(!r.ok){const e=new Error(d.error||("HTTP "+r.status));e.status=r.status;throw e}
+  return d;
+}
+const post=(p,b)=>api(p,{method:"POST",body:JSON.stringify(Object.assign({by:user()},b||{}))});
+const fmtT=iso=>iso?new Date(iso).toLocaleString("zh-CN",{hour12:false}):"—";
+const fmtMin=m=>m>=60?Math.floor(m/60)+"h"+Math.round(m%60)+"m":Math.round(m)+"m";
+const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+async function refresh(silent){
+  try{S.state=await api("/api/state")}catch(e){if(!silent)toast("状态获取失败："+e.message,true);return}
+  if(S.missionId&&!S.state.missions.some(m=>m.id===S.missionId))S.missionId=null;
+  if(!S.missionId){const m=S.state.missions.find(m=>m.status!=="closed");if(m)S.missionId=m.id}
+  render();
+}
+function mission(){return S.state?.missions.find(m=>m.id===S.missionId)||null}
+function activeOrch(mid){return S.state.orchestrations.find(o=>o.mission_id===mid&&o.status==="active")||null}
+function orchSectors(oid){return S.state.sectors.filter(s=>s.orchestration_id===oid&&s.status==="active")}
+function vesselName(id){const v=S.state.vessels.find(v=>v.id===id);return v?v.name:"#"+id}
+
+/* ---------- 渲染 ---------- */
+function render(){
+  const st=S.state;if(!st)return;
+  $("#sea").textContent=`海况：${st.sea_state.level} 级${st.sea_state.note?"（"+st.sea_state.note+"）":""}`;
+  renderMissions();renderVessels();renderOrch();renderMap();renderHistory();
+}
+function renderMissions(){
+  const box=$("#missions");
+  if(!S.state.missions.length){box.innerHTML='<span class="muted">暂无事件</span>';return}
+  box.innerHTML=S.state.missions.map(m=>`
+    <div class="mission ${m.id===S.missionId?"sel":""}" data-id="${m.id}">
+      <span class="code">${esc(m.code)}</span> ${esc(m.name)}
+      <span class="tag ${m.status}">${STATUS[m.status]||m.status}</span>
+      <span class="tag">P${m.priority}</span><br>
+      <span class="muted">中心 ${m.center_lat.toFixed(2)},${m.center_lon.toFixed(2)} · 半径 ${m.radius_km}km · 截止 ${fmtT(m.deadline)} · v${m.version}</span>
+    </div>`).join("");
+  box.querySelectorAll(".mission").forEach(el=>el.onclick=()=>{S.missionId=+el.dataset.id;S.plan=null;render()});
+}
+function renderVessels(){
+  const vs=S.state.vessels;
+  $("#vessels").innerHTML=vs.length?`<table><tr><th>船名</th><th>能力</th><th>状态</th><th>船位</th><th>航程</th><th>海况</th></tr>${
+    vs.map(v=>`<tr><td>${esc(v.name)}</td><td>${v.capabilities.map(esc).join("/")}</td>
+      <td><span class="tag ${v.status}">${STATUS[v.status]}</span></td>
+      <td>${v.latitude.toFixed(2)},${v.longitude.toFixed(2)}</td>
+      <td>${v.endurance_km}km</td><td>≤${v.max_sea_state}级</td></tr>`).join("")}</table>`:'<span class="muted">暂无船只</span>';
+  const sel=$('#reportForm select[name=vessel_id]'),cur=sel.value;
+  sel.innerHTML=vs.map(v=>`<option value="${v.id}">${esc(v.name)}</option>`).join("");
+  sel.value=cur;
+}
+function renderOrch(){
+  const m=mission();$("#orchFor").textContent=m?`— ${m.code}`:"";
+  $("#publishBtn").disabled=$("#planBtn").disabled=!m||m.status==="closed";
+  const box=$("#orch");
+  if(!m){box.innerHTML='<span class="muted">请先在左侧选择事件</span>';$("#cancelOrchBtn").disabled=true;return}
+  const o=activeOrch(m.id);
+  $("#cancelOrchBtn").disabled=!o;
+  if(!o){box.innerHTML='<span class="muted">当前无生效编排，可「预演编排」后发布</span>';return}
+  const secs=orchSectors(o.id);
+  const avail=S.state.vessels.filter(v=>v.status==="available");
+  box.innerHTML=`<div class="muted">编排 #${o.id} · ${esc(o.created_by)} 发布于 ${fmtT(o.created_at)} · 海况 ${o.sea_state} 级 · ${o.feasible?"可满足时限":"⚠ 有时限风险"}</div>
+    ${o.note?`<div class="notes">${esc(o.note)}</div>`:""}
+    <table><tr><th>扇区</th><th>角度</th><th>船只</th><th>距离</th><th>ETA</th><th>预计完成</th><th>改派 / 取消</th></tr>
+    ${secs.map(s=>`<tr><td>${s.seq}</td><td>${s.start_deg}°-${s.end_deg}°</td><td>${esc(vesselName(s.vessel_id))}</td>
+      <td>${s.distance_km}km</td><td>${fmtMin(s.eta_min)}</td><td>${fmtT(s.completion_at)}</td>
+      <td><select data-sec="${s.id}">${avail.map(v=>`<option value="${v.id}">${esc(v.name)}</option>`).join("")}</select>
+          <button class="ghost" data-reassign="${s.id}" ${avail.length?"":"disabled"}>改派</button>
+          <button class="danger" data-cancelsec="${s.id}">取消</button></td></tr>`).join("")}</table>`;
+  box.querySelectorAll("[data-reassign]").forEach(b=>b.onclick=async()=>{
+    const sid=+b.dataset.reassign;
+    const vid=+box.querySelector(`select[data-sec="${sid}"]`).value;
+    const reason=prompt("改派原因（可选）","")??"";
+    try{await post(`/api/orchestrations/${o.id}/reassign`,{sector_id:sid,vessel_id:vid,reason});toast("已改派，原船已释放");S.plan=null;await refresh(true)}
+    catch(e){toast("改派失败："+e.message,true);await refresh(true)}
+  });
+  box.querySelectorAll("[data-cancelsec]").forEach(b=>b.onclick=async()=>{
+    if(!confirm("取消该扇区并释放其船只？"))return;
+    try{await post(`/api/sectors/${b.dataset.cancelsec}/cancel`,{reason:"值班员取消"});toast("扇区已取消，船只已释放");await refresh(true)}
+    catch(e){toast("取消失败："+e.message,true);await refresh(true)}
+  });
+}
+function renderHistory(){
+  const ol=$("#history");
+  ol.innerHTML=S.state.history.map(h=>{
+    const brief=x=>{
+      if(!x)return "—";
+      if(x.sectors)return x.sectors.map(s=>`扇区${s.seq}·${esc(s.vessel_name||"—")}(${s.span})`).join("，")||"—";
+      if(x.vessel_name)return `扇区${x.seq}·${esc(x.vessel_name)}${x.span?"("+x.span+")":""}${x.reason?" · "+esc(x.reason):""}`;
+      if(x.level!==undefined)return x.level+" 级"+(x.note?"（"+esc(x.note)+"）":"");
+      if(x.latitude!==undefined)return `${esc(x.name||"")} @ ${x.latitude},${x.longitude} / 航程 ${x.endurance_km}km`;
+      if(x.code)return esc(x.code)+(x.status?" → "+(STATUS[x.status]||x.status):"");
+      if(x.reason)return esc(x.reason);
+      return esc(JSON.stringify(x));
+    };
+    return `<li><span class="t">${fmtT(h.created_at)}</span><b>${esc(h.actor)}</b> ${ACT[h.action]||esc(h.action)}：
+      <span class="chg">${brief(h.before)}</span> → <span class="chg">${brief(h.after)}</span></li>`;
+  }).join("")||'<li class="muted">暂无变更</li>';
+}
+
+/* ---------- 地图 ---------- */
+function project(lat,lon,m,scale){
+  const dx=(lon-m.center_lon)*111.32*Math.cos(m.center_lat*Math.PI/180);
+  const dy=(lat-m.center_lat)*110.94;
+  return [250+dx*scale,250-dy*scale];
+}
+function wedgePath(s,e,R){
+  const p=a=>[250+R*Math.sin(a*Math.PI/180),250-R*Math.cos(a*Math.PI/180)];
+  const[x1,y1]=p(s),[x2,y2]=p(e);
+  return `M250 250 L${x1.toFixed(1)} ${y1.toFixed(1)} A${R} ${R} 0 ${e-s>180?1:0} 1 ${x2.toFixed(1)} ${y2.toFixed(1)} Z`;
+}
+function renderMap(){
+  const svg=$("#map");const m=mission();
+  if(!m){svg.innerHTML='<text x="250" y="250" fill="#9fc3e0" text-anchor="middle">请选择事件</text>';$("#countdown").textContent="";return}
+  const scale=220/m.radius_km;
+  let g=`<circle cx="250" cy="250" r="220" fill="none" stroke="#3b7197" stroke-width="1.5"/>
+    <circle cx="250" cy="250" r="110" fill="none" stroke="#1d4e74"/>
+    <line x1="250" y1="20" x2="250" y2="480" stroke="#1d4e74"/><line x1="20" y1="250" x2="480" y2="250" stroke="#1d4e74"/>
+    <text x="250" y="16" fill="#9fc3e0" text-anchor="middle" font-size="12">北 · 半径 ${m.radius_km}km</text>`;
+  const o=activeOrch(m.id);
+  const secs=o?orchSectors(o.id):[];
+  const draw=(list,dash)=>list.forEach((s,i)=>{
+    const col=PALETTE[(S.state.vessels.findIndex(v=>v.id===s.vessel_id)+8)%PALETTE.length];
+    g+=`<path d="${wedgePath(s.start_deg,s.end_deg,220)}" fill="${col}" fill-opacity="${dash?0.10:0.30}" stroke="${col}" stroke-width="2" ${dash?'stroke-dasharray="6 4"':""}/>`;
+    const mid=(s.start_deg+s.end_deg)/2,lx=250+150*Math.sin(mid*Math.PI/180),ly=250-150*Math.cos(mid*Math.PI/180);
+    g+=`<text x="${lx}" y="${ly}" fill="#fff" text-anchor="middle" font-size="13" font-weight="600">${dash?"预演 ":""}扇区${s.seq} ${esc(vesselName(s.vessel_id))}</text>`;
+  });
+  draw(secs,false);
+  if(S.plan&&S.plan.sectors.length)draw(S.plan.sectors,true);
+  S.state.vessels.forEach(v=>{
+    const[x,y]=project(v.latitude,v.longitude,m,scale);
+    if(x<-20||x>520||y<-20||y>520)return;
+    const col=v.status==="available"?"#36b37e":"#ffab00";
+    g+=`<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="5" fill="${col}" stroke="#fff"/>
+        <text x="${(x+8).toFixed(1)}" y="${(y+4).toFixed(1)}" fill="#cfe6f5" font-size="11">${esc(v.name)}</text>`;
+  });
+  g+='<circle cx="250" cy="250" r="4" fill="#ff5630"/><text x="258" y="254" fill="#ff8f6b" font-size="11">事件中心</text>';
+  svg.innerHTML=g;
+}
+function tickCountdown(){
+  const m=mission();const el=$("#countdown");
+  if(!m){el.textContent="";return}
+  const ms=new Date(m.deadline)-Date.now();
+  const h=Math.floor(Math.abs(ms)/3.6e6),mm=Math.floor(Math.abs(ms)%3.6e6/6e4),ss=Math.floor(Math.abs(ms)%6e4/1e3);
+  el.textContent=ms>=0?`距最晚完成时刻还有 ${h}h ${mm}m ${ss}s`:`已超过最晚完成时刻 ${h}h ${mm}m ${ss}s`;
+  el.className=ms>=0?"":"late";
+}
+
+/* ---------- 计划预览 ---------- */
+function renderPlan(){
+  const p=S.plan,box=$("#planOut");
+  if(!p){box.innerHTML="";return}
+  if(!p.sectors.length){box.innerHTML=`<div class="notes">${p.notes.map(esc).join("<br>")}</div><div class="warnline">无可排方案</div>`;return}
+  box.innerHTML=`<div class="notes">${p.notes.map(esc).join("<br>")}</div>
+    ${p.deadline_risk?'<div class="warnline">⚠ 预计无法在最晚完成时刻前完成</div>':""}
+    <table><tr><th>扇区</th><th>角度</th><th>船只</th><th>距离</th><th>ETA</th><th>搜索耗时</th><th>预计完成</th><th>提示</th></tr>
+    ${p.sectors.map(s=>`<tr><td>${s.seq}</td><td>${s.start_deg}°-${s.end_deg}°</td><td>${esc(s.vessel_name)}</td>
+      <td>${s.distance_km}km</td><td>${fmtMin(s.eta_min)}</td><td>${fmtMin(s.search_min)}</td><td>${fmtT(s.completion_at)}</td>
+      <td class="warnline">${(s.warnings||[]).map(esc).join("；")}</td></tr>`).join("")}</table>
+    ${p.rejected.length?`<h3>未入选船只</h3><table><tr><th>船只</th><th>原因</th></tr>${
+      p.rejected.map(r=>`<tr><td>${esc(r.vessel_name)}</td><td>${r.reasons.map(esc).join("；")}</td></tr>`).join("")}</table>`:""}`;
+}
+
+/* ---------- 事件 ---------- */
+$("#missionForm").onsubmit=async e=>{
+  e.preventDefault();const f=new FormData(e.target);
+  const body=Object.fromEntries(f.entries());
+  body.deadline=new Date(body.deadline).toISOString();
+  try{const m=await post("/api/missions",body);S.missionId=m.id;toast("事件已登记");e.target.reset();setDefaultDeadline();await refresh(true)}
+  catch(err){toast("登记失败："+err.message,true)}
+};
+$("#vesselForm").onsubmit=async e=>{
+  e.preventDefault();const f=new FormData(e.target);const b=Object.fromEntries(f.entries());
+  b.capabilities=b.capabilities.split(/[,，]/).map(s=>s.trim()).filter(Boolean);
+  try{await post("/api/vessels",b);toast("船只已登记");e.target.reset();await refresh(true)}
+  catch(err){toast("登记失败："+err.message,true)}
+};
+$("#reportForm").onsubmit=async e=>{
+  e.preventDefault();const f=new FormData(e.target);const b=Object.fromEntries(f.entries());
+  try{await post(`/api/vessels/${b.vessel_id}/report`,b);toast("船位/航程已更新");await refresh(true)}
+  catch(err){toast("更新失败："+err.message,true)}
+};
+$("#seaBtn").onclick=async()=>{
+  const v=prompt("新的海况等级（0-9）：",String(S.state?.sea_state?.level??3));
+  if(v===null)return;
+  const note=prompt("海况备注（可选）：","")??"";
+  try{await post("/api/sea-state",{level:+v,note});toast("海况已更新，重新预演可刷新方案");await refresh(true)}
+  catch(err){toast("更新失败："+err.message,true)}
+};
+$("#planBtn").onclick=async()=>{
+  const m=mission();if(!m)return;
+  try{S.plan=await api(`/api/missions/${m.id}/plan`);renderPlan();renderMap()}
+  catch(err){toast("预演失败："+err.message,true)}
+};
+$("#publishBtn").onclick=async()=>{
+  const m=mission();if(!m)return;
+  if(!confirm(`以当前数据计算并发布编排？（基于版本 v${m.version}）`))return;
+  try{await post(`/api/missions/${m.id}/publish`,{expected_version:m.version});S.plan=null;$("#planOut").innerHTML="";toast("编排已发布");await refresh(true)}
+  catch(err){
+    if(err.status===409){toast("发布冲突："+err.message,true);await refresh(true)}
+    else toast("发布失败："+err.message,true);
+  }
+};
+$("#cancelOrchBtn").onclick=async()=>{
+  const m=mission();if(!m)return;const o=activeOrch(m.id);if(!o)return;
+  const reason=prompt("取消原因（将记录到历史）：","")??"";
+  if(!confirm("取消整个编排并释放全部船只？"))return;
+  try{await post(`/api/orchestrations/${o.id}/cancel`,{reason});toast("编排已取消，资源已释放");await refresh(true)}
+  catch(err){toast("取消失败："+err.message,true);await refresh(true)}
+};
+
+function setDefaultDeadline(){
+  const d=new Date(Date.now()+4*3.6e6);
+  d.setMinutes(d.getMinutes()-d.getTimezoneOffset());
+  $('#missionForm input[name=deadline]').value=d.toISOString().slice(0,16);
+}
+$("#user").value=localStorage.getItem("sarUser")||"";
+$("#user").onchange=e=>localStorage.setItem("sarUser",e.target.value.trim());
+setDefaultDeadline();
+refresh();
+setInterval(()=>refresh(true),5000);
+setInterval(tickCountdown,1000);
+</script>
+</body>
+</html>
