@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>搜救扇区编排台</title>
+<style>
+  body{font:15px/1.6 system-ui,sans-serif;max-width:1200px;margin:24px auto;padding:0 20px;color:#17324d}
+  h1{margin-bottom:4px}
+  h2{margin-top:28px;border-bottom:2px solid #d7e5f0;padding-bottom:4px}
+  table{border-collapse:collapse;width:100%;margin:12px 0}
+  th,td{border:1px solid #cbd8e3;padding:6px 8px;text-align:left;font-size:14px}
+  th{background:#edf5fb}
+  input,select,button{font:inherit;padding:4px 8px;margin:2px}
+  button{cursor:pointer;background:#2784c7;color:#fff;border:0;border-radius:4px;padding:5px 12px}
+  button.ghost{background:#e8eef4;color:#17324d}
+  button.warn{background:#c74827}
+  .card{background:#f7fbfe;border-left:5px solid #2784c7;padding:10px 16px;margin:10px 0}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:4px 10px;align-items:end}
+  .grid label{display:flex;flex-direction:column;font-size:13px;color:#4a6b84}
+  .badge{display:inline-block;padding:1px 8px;border-radius:10px;font-size:12px;background:#e8eef4}
+  .b-open{background:#d9efe0}.b-assigned{background:#cfe3f7}.b-planned{background:#fdf0d5}
+  .b-released,.b-offline{background:#f0d9d5}.b-active{background:#d9efe0}
+  .b-superseded,.b-cancelled,.b-closed{background:#e4e4e4;color:#666}
+  #msg{position:sticky;top:0;padding:8px 14px;margin:8px 0;display:none;border-radius:4px;z-index:9}
+  #msg.ok{display:block;background:#d9efe0}
+  #msg.err{display:block;background:#f8d7da}
+  #preview table{background:#fffdf5}
+  .muted{color:#6b8299;font-size:13px}
+  ol#history li{margin:3px 0;font-size:14px}
+</style>
+
+<h1>搜救扇区编排台</h1>
+<div class="card">
+  值班身份：<input id="user" size="8" placeholder="姓名">
+  <select id="role"><option value="coordinator">coordinator（协调员）</option><option value="viewer">viewer（旁观）</option></select>
+  <span class="muted">数据保存在服务器 SQLite，重开页面自动恢复当前扇区与历史变更；每 5 秒自动刷新。</span>
+  <button class="ghost" onclick="load()">立即刷新</button>
+</div>
+<div id="msg"></div>
+
+<h2>一、登记遇险事件</h2>
+<form id="f-incident" class="grid card">
+  <label>事件编号<input name="code" required placeholder="SAR-2026-042"></label>
+  <label>事件名称<input name="title" required placeholder="远星号失联"></label>
+  <label>中心纬度<input name="center_lat" required type="number" step="any" placeholder="31.2"></label>
+  <label>中心经度<input name="center_lon" required type="number" step="any" placeholder="122.5"></label>
+  <label>搜索半径 km<input name="radius_km" required type="number" step="any" placeholder="30"></label>
+  <label>优先级(1最高)<select name="priority"><option>1</option><option>2</option><option selected>3</option><option>4</option><option>5</option></select></label>
+  <label>最晚完成时刻(UTC)<input name="deadline" required type="datetime-local"></label>
+  <label>海况(0-9)<input name="sea_state" required type="number" min="0" max="9" value="4"></label>
+  <label>所需能力<select name="required_capability"><option value="surface">surface 水面搜索</option><option value="air">air 空中搜索</option></select></label>
+  <label>&nbsp;<button type="submit">登记事件</button></label>
+</form>
+
+<h2>二、待命资源</h2>
+<form id="f-resource" class="grid card">
+  <label>名称<input name="name" required placeholder="海巡03"></label>
+  <label>类型<select name="kind"><option value="vessel">vessel 船艇</option><option value="aircraft">aircraft 航空器</option></select></label>
+  <label>能力(逗号分隔)<input name="capabilities" required value="surface" placeholder="surface,night"></label>
+  <label>纬度<input name="latitude" required type="number" step="any"></label>
+  <label>经度<input name="longitude" required type="number" step="any"></label>
+  <label>航速 kn<input name="speed_kn" required type="number" step="any" placeholder="20"></label>
+  <label>剩余航程 km<input name="range_km" required type="number" step="any" placeholder="300"></label>
+  <label>适用海况<input name="max_sea_state" required type="number" min="0" max="9" value="5"></label>
+  <label>&nbsp;<button type="submit">登记资源</button></label>
+</form>
+<table id="resources"><thead><tr>
+  <th>名称</th><th>类型</th><th>能力</th><th>状态</th><th>位置</th><th>航速kn</th><th>剩余航程km</th><th>适用海况</th><th>版本</th><th>操作</th>
+</tr></thead><tbody></tbody></table>
+
+<h2>三、事件与编排</h2>
+<table id="incidents"><thead><tr>
+  <th>编号</th><th>名称</th><th>中心</th><th>半径km</th><th>优先级</th><th>最晚完成</th><th>海况</th><th>状态</th><th>版本</th><th>操作</th>
+</tr></thead><tbody></tbody></table>
+<div class="card">
+  <b>编排台</b>（同一事件只保留一个生效编排；重排需基于当前版本，先到者保留）<br>
+  选择事件：<select id="plan-incident"></select>
+  备注：<input id="plan-note" size="16" placeholder="可空">
+  <button class="ghost" onclick="previewPlan()">预览编排</button>
+  <button onclick="publishPlan()">发布编排</button>
+  <button class="warn" onclick="cancelPlan()">取消当前编排</button>
+  <div id="preview"></div>
+</div>
+
+<h2>四、当前扇区</h2>
+<table id="sectors"><thead><tr>
+  <th>扇区</th><th>编排</th><th>方位区间</th><th>优先级</th><th>最晚完成</th><th>状态</th><th>资源</th><th>ETA(分)</th><th>搜索(分)</th><th>操作</th>
+</tr></thead><tbody></tbody></table>
+
+<h2>五、历史变更</h2>
+<ol id="history"></ol>
+
+<script>
+const $ = s => document.querySelector(s);
+let state = null;
+
+const userEl = $('#user'), roleEl = $('#role');
+userEl.value = localStorage.getItem('sar-user') || 'coord-1';
+roleEl.value = localStorage.getItem('sar-role') || 'coordinator';
+[userEl, roleEl].forEach(el => el.addEventListener('change', () => {
+  localStorage.setItem('sar-user', userEl.value);
+  localStorage.setItem('sar-role', roleEl.value);
+}));
+
+function say(text, ok) {
+  const m = $('#msg');
+  m.textContent = text; m.className = ok ? 'ok' : 'err';
+  clearTimeout(m._t); m._t = setTimeout(() => m.className = '', 6000);
+}
+function hdrs() {
+  return {'Content-Type': 'application/json', 'X-User': userEl.value.trim(), 'X-Role': roleEl.value};
+}
+async function post(path, body) {
+  const r = await fetch(path, {method: 'POST', headers: hdrs(), body: JSON.stringify(body || {})});
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(d.error || ('HTTP ' + r.status));
+  return d;
+}
+function formData(form) {
+  const d = {};
+  new FormData(form).forEach((v, k) => d[k] = v);
+  return d;
+}
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const badge = s => `<span class="badge b-${s}">${esc(s)}</span>`;
+
+async function load() {
+  try {
+    state = await fetch('/api/sector/state').then(r => r.json());
+    renderAll();
+  } catch (e) { say('状态加载失败：' + e.message, false); }
+}
+
+function renderAll() {
+  // 事件表
+  $('#incidents tbody').innerHTML = state.incidents.map(i => `<tr>
+    <td>${esc(i.code)}</td><td>${esc(i.title)}</td>
+    <td>${i.center_lat.toFixed(3)},${i.center_lon.toFixed(3)}</td>
+    <td>${i.radius_km}</td><td>${i.priority}</td><td>${esc(i.deadline)}</td>
+    <td>${i.sea_state}</td><td>${badge(i.status)}</td><td>${i.version}</td>
+    <td>${i.status === 'open' ? `<button class="ghost" onclick="updateSeaState(${i.id},${i.version},${i.sea_state})">改海况</button>` : ''}</td>
+  </tr>`).join('') || '<tr><td colspan="10" class="muted">暂无事件</td></tr>';
+  // 编排台事件下拉
+  const open = state.incidents.filter(i => i.status === 'open');
+  const sel = $('#plan-incident'), keep = sel.value;
+  sel.innerHTML = open.map(i => `<option value="${i.id}">${esc(i.code)} ${esc(i.title)}</option>`).join('');
+  if (keep) sel.value = keep;
+  // 资源表
+  $('#resources tbody').innerHTML = state.resources.map(r => `<tr>
+    <td>${esc(r.name)}</td><td>${esc(r.kind)}</td><td>${esc(r.capabilities.join(','))}</td>
+    <td>${badge(r.status)}</td><td>${r.latitude.toFixed(3)},${r.longitude.toFixed(3)}</td>
+    <td>${r.speed_kn}</td><td>${r.range_km}</td><td>${r.max_sea_state}</td><td>${r.version}</td>
+    <td><button class="ghost" onclick="updatePosition(${r.id},${r.version},'${esc(r.name)}')">更新船位</button></td>
+  </tr>`).join('') || '<tr><td colspan="10" class="muted">暂无资源</td></tr>';
+  // 当前扇区
+  const avail = state.resources.filter(r => r.status === 'available');
+  $('#sectors tbody').innerHTML = state.sectors.map(s => `<tr>
+    <td>${esc(s.code)}</td><td>第${s.plan_revision}版</td>
+    <td>${s.bearing_start}°–${s.bearing_end}°</td><td>${s.priority}</td>
+    <td>${esc(s.deadline)}</td><td>${badge(s.status)}</td>
+    <td>${esc(s.resource_name || '—')}</td>
+    <td>${s.eta_min ?? '—'}</td><td>${s.search_min ?? '—'}</td>
+    <td>${(s.status === 'assigned' || s.status === 'planned') ? `
+      <select id="rs-${s.id}">${avail.map(r => `<option value="${r.id}">${esc(r.name)}</option>`).join('')}</select>
+      <button class="ghost" onclick="reassign(${s.id})">改派</button>
+      <button class="warn" onclick="cancelSector(${s.id},'${esc(s.code)}')">取消</button>` : ''}</td>
+  </tr>`).join('') || '<tr><td colspan="10" class="muted">暂无生效扇区，请先发布编排</td></tr>';
+  // 历史
+  $('#history').innerHTML = state.history.map(h =>
+    `<li><span class="muted">${esc(h.at)}</span> <b>${esc(h.actor)}</b> ${esc(h.summary)}</li>`
+  ).join('') || '<li class="muted">暂无变更</li>';
+}
+
+function activePlan(incidentId) {
+  return state.plans.find(p => p.incident_id === incidentId && p.status === 'active');
+}
+
+async function previewPlan() {
+  const id = +$('#plan-incident').value;
+  if (!id) return say('请先登记事件', false);
+  try {
+    const d = await post('/api/sector/plans/preview', {incident_id: id});
+    $('#preview').innerHTML = `<table><thead><tr>
+      <th>扇区</th><th>方位</th><th>指派资源</th><th>距离km</th><th>ETA分</th><th>搜索分</th><th>航程余量km</th><th>排除原因</th>
+      </tr></thead><tbody>${d.sectors.map(s => {
+        const a = s.assignment;
+        const rej = Object.entries(s.rejects || {}).map(([n, rs]) => `${esc(n)}: ${esc(rs.join('、'))}`).join('<br>');
+        return `<tr><td>${esc(s.code)}</td><td>${s.bearing_start}°–${s.bearing_end}°</td>
+          <td>${a ? esc(a.resource_name) : '—'}</td><td>${a ? a.distance_km : '—'}</td>
+          <td>${a ? a.eta_min : '—'}</td><td>${a ? a.search_min : '—'}</td>
+          <td>${a ? a.range_margin_km : '—'}</td><td class="muted">${rej}</td></tr>`;
+      }).join('')}</tbody></table>
+      <div class="muted">生成于 ${esc(d.generated_at)}，预览不落库，发布才生效。</div>`;
+    say('预览成功：' + d.sector_count + ' 个扇区', true);
+  } catch (e) { say(e.message, false); }
+}
+
+async function publishPlan() {
+  const id = +$('#plan-incident').value;
+  if (!id) return say('请先登记事件', false);
+  const body = {incident_id: id, note: $('#plan-note').value};
+  const cur = activePlan(id);
+  if (cur) {
+    if (!confirm(`已存在第 ${cur.revision} 版编排（${cur.published_by} 发布），发布后将取代它并释放其资源，继续？`)) return;
+    body.expected_revision = cur.revision;
+  }
+  try {
+    const d = await post('/api/sector/plans/publish', body);
+    $('#preview').innerHTML = '';
+    say(`第 ${d.plan.revision} 版编排已发布（${d.sectors.length} 个扇区）`, true);
+    load();
+  } catch (e) { say(e.message, false); load(); }
+}
+
+async function cancelPlan() {
+  const id = +$('#plan-incident').value;
+  const cur = activePlan(id);
+  if (!cur) return say('该事件没有生效编排', false);
+  const reason = prompt(`取消第 ${cur.revision} 版编排的原因：`, '海况变化，重新组织');
+  if (reason === null) return;
+  try {
+    await post('/api/sector/plans/cancel', {plan_id: cur.id, reason});
+    say('编排已取消，资源已释放', true); load();
+  } catch (e) { say(e.message, false); }
+}
+
+async function reassign(sectorId) {
+  const sel = $('#rs-' + sectorId);
+  if (!sel || !sel.value) return say('没有可改派的待命资源', false);
+  const reason = prompt('改派原因（可空）：', '');
+  if (reason === null) return;
+  try {
+    await post('/api/sector/sectors/reassign', {sector_id: sectorId, new_resource_id: +sel.value, reason});
+    say('改派完成，原资源已释放', true); load();
+  } catch (e) { say(e.message, false); load(); }
+}
+
+async function cancelSector(sectorId, code) {
+  const reason = prompt(`取消扇区 ${code} 的原因（必填）：`, '');
+  if (!reason) return;
+  try {
+    await post('/api/sector/sectors/cancel', {sector_id: sectorId, reason});
+    say('扇区已取消，资源已释放', true); load();
+  } catch (e) { say(e.message, false); }
+}
+
+async function updateSeaState(id, version, cur) {
+  const v = prompt(`新的现场海况（当前 ${cur} 级）：`, cur);
+  if (v === null) return;
+  try {
+    await post('/api/sector/incidents/update', {incident_id: id, expected_version: version, sea_state: +v});
+    say('海况已更新，可重新预览并发布编排', true); load();
+  } catch (e) { say(e.message, false); load(); }
+}
+
+async function updatePosition(id, version, name) {
+  const v = prompt(`更新 ${name} 船位与剩余航程，格式：纬度,经度,剩余航程km`, '');
+  if (!v) return;
+  const [lat, lon, range] = v.split(',').map(x => parseFloat(x));
+  if ([lat, lon, range].some(isNaN)) return say('格式不正确', false);
+  try {
+    await post('/api/sector/resources/update', {resource_id: id, expected_version: version, latitude: lat, longitude: lon, range_km: range});
+    say('船位已更新', true); load();
+  } catch (e) { say(e.message, false); load(); }
+}
+
+$('#f-incident').addEventListener('submit', async e => {
+  e.preventDefault();
+  const d = formData(e.target);
+  d.deadline = d.deadline ? d.deadline + ':00Z' : '';
+  try {
+    await post('/api/sector/incidents', d);
+    e.target.reset(); say('事件已登记', true); load();
+  } catch (err) { say(err.message, false); }
+});
+
+$('#f-resource').addEventListener('submit', async e => {
+  e.preventDefault();
+  const d = formData(e.target);
+  d.capabilities = d.capabilities.split(',').map(s => s.trim()).filter(Boolean);
+  try {
+    await post('/api/sector/resources', d);
+    e.target.reset(); say('资源已登记', true); load();
+  } catch (err) { say(err.message, false); }
+});
+
+load();
+setInterval(load, 5000);
+</script>
+</html>
